@@ -1,0 +1,853 @@
+---
+title: "PS531_Pre Analysis Plan"
+author: 'Hyeonseo Cho'
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+format:
+  html:
+    code-fold: true
+  pdf:
+    number-sections: true
+    colorlinks: true
+    cite-method: biblatex
+    keep-tex: true
+    monofontoptions: "Scale=0.7"
+    include-in-header:
+      text: |
+        \usepackage{bm}
+        \usepackage{tikz}
+        \usepackage{tikz-cd}
+        \usetikzlibrary{arrows,automata,positioning,trees,decorations.markings}
+        \usepackage{tikz-qtree}
+        \usepackage{amsmath, booktabs, caption, longtable,listings,fancyvrb,fvextra}
+        \DeclareOldFontCommand{\bf}{\normalfont\bfseries}{\mathbf}
+fontsize: 10pt
+geometry: margin=1in
+graphics: yes
+---
+
+```{r loading data, eval=TRUE, echo=TRUE, results = "hide", message = FALSE, warning = FALSE}
+## might need to change the data source
+# cannot be loaded to github repo, even the zips (too big)
+library(haven)
+WV6_Data_sav_v20201117 <- read_sav("~/Library/Mobile Documents/com~apple~CloudDocs/2025 Spring/PS 531 /Final/WV6_Data_sav_v20201117.sav")
+View(WV6_Data_sav_v20201117)
+
+WVS_Wave_7_sas_v6_0 <- read_sas("~/Library/Mobile Documents/com~apple~CloudDocs/2025 Spring/PS 531 /Final/WVS_Wave_7_sas_v6_0.sas7bdat", 
+    NULL)
+View(WVS_Wave_7_sas_v6_0)
+
+V_Dem_CY_Full_Others_v15 <- read_sav("~/Library/Mobile Documents/com~apple~CloudDocs/2025 Spring/PS 531 /Final/V-Dem-CY-FullOthers-v15_sav/V-Dem-CY-Full+Others-v15.sav")
+View(V_Dem_CY_Full_Others_v15)
+```
+
+
+```{r loading data and rename, eval=TRUE, echo=FALSE}
+## rename
+WVS6 <- WV6_Data_sav_v20201117
+WVS7 <- WVS_Wave_7_sas_v6_0
+VDem <- V_Dem_CY_Full_Others_v15
+```
+
+```{r selecting countries, eval=TRUE, echo=FALSE}
+## countries both participated in WVS Wave 6 and 7
+## 42 countries
+## Correlates of War (COW) code both used in WVS and VDem
+## manually created
+## WVS6 conducted over 2 years in Argentina, China, and New Zealand (but ends either in January or February)
+library(readr)
+Countries <- read_csv("~/Library/Mobile Documents/com~apple~CloudDocs/2025 Spring/PS 531 /Final/Countries.csv")
+View(Countries)
+str(Countries)
+as.data.frame(Countries)
+
+## trimming
+colnames(Countries)[colnames(Countries) == '...1'] <- 'Country_name'
+Countries <- Countries[, -5:-7]
+View(Countries)
+
+## may change this part
+COWlist <- list("160", "371", "900", "140", "100", "352", "155", "710", "130", "651", "255", "714", "750", "645", "740", "663", "705", "703", "660", "620", "820", "70", "600", "210", "920", "475", "770", "135", "840", "360", "365", "830", "732", "713", "800", "616", "640", "369", "2", "165", "704", "552")
+COWvec <- unlist(COWlist)
+
+library(dplyr)
+## change WVS7 column name of COW, for easier merging 
+colnames(WVS7)[colnames(WVS7) == 'C_COW_NUM'] <- 'COW'
+WVS6_trimmed <- WVS6 %>% filter(COW %in% COWlist)
+WVS7_trimmed <- WVS7 %>% filter(COW %in% COWlist)
+```
+
+```{r extracting Democratic Value Variable V1, eval=TRUE, echo=FALSE}
+### Affective Evaluation of Democratic System
+## Comp Q) I'm going to describe various types of political systems and ask what you think about each ## as a way of governing this country. For each one, would you say it is a very good, fairly good,
+## fairly bad or very bad way of governing this country?
+## Sub Q) Having a democratic political system
+## Very good = 1, Very bad = 4
+## WVS6 V130, WVS7 Q238
+
+summary(WVS6_trimmed$V130) ## NAs seem to have been already treated
+summary(WVS7_trimmed$Q238) ## no NA (technically)
+
+## recode so that larger values can represent more favorable attitude toward democracy
+WVS6_trimmed <- WVS6_trimmed %>%
+  mutate(
+    V130_numeric = as.numeric(V130),  # strip labels
+    V130_reversed = recode(V130_numeric,
+                           `1` = 4,
+                           `2` = 3,
+                           `3` = 2,
+                           `4` = 1)
+  )
+summary(WVS6_trimmed$V130_reversed)
+
+WVS7_trimmed <- WVS7_trimmed %>%
+  mutate(
+    Q238_numeric = as.numeric(Q238),  # strip labels
+    Q238_reversed = recode(Q238_numeric,
+                           `1` = 4,
+                           `2` = 3,
+                           `3` = 2,
+                           `4` = 1)
+  )
+summary(WVS7_trimmed$Q238_reversed)
+
+
+## checking distribution in WVS6
+library(ggplot2)
+WVS6_valid1 <- WVS6_trimmed %>% filter(!is.na(V130_reversed))
+
+## Create the boxplot
+ggplot(WVS6_valid1, aes(x = as.factor(COW), y = V130_reversed)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Affective Evaluation of Democratic System by Country",
+    x = "Country (COW Code)",
+    y = "V130_reversed"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+## mostly converging on 3 and 4, which are both positive
+
+## checking distribution in WVS7
+## dropping NAs
+WVS7_valid1 <- WVS7_trimmed %>% filter(Q238_reversed >= 1 & Q238_reversed <= 4)
+
+## Create the boxplot
+ggplot(WVS7_valid1, aes(x = as.factor(COW), y = Q238_reversed)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Affective Evaluation of Democratic System by Country",
+    x = "Country (COW Code)",
+    y = "Q238_reversed"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+## overall, not much temporal change or corss-unit variance expected...
+
+## more detailed examination of missingness
+library(tidyr)
+
+## WVS6$V130
+v130_counts_by_country <- WVS6_trimmed %>%
+  mutate(V130_str = ifelse(is.na(V130_reversed), "NA", as.character(V130_reversed))) %>%
+  group_by(COW, V130_str) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = V130_str,
+    values_from = count,
+    values_fill = 0  ## Fill missing combinations with 0
+  ) %>%
+  arrange(COW)
+v130_counts_by_country
+
+## WVS7$Q238
+q238_counts_by_country <- WVS7_trimmed %>%
+  mutate(
+    Q238_str = case_when(
+      Q238_reversed < 0 ~ "NA",     ## Treat negative values as NA-like
+      TRUE ~ as.character(Q238_reversed)
+    )
+  ) %>%
+  group_by(COW, Q238_str) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = Q238_str,
+    values_from = count,
+    values_fill = 0
+  ) %>%
+  arrange(COW)
+q238_counts_by_country
+
+
+
+```
+
+
+```{r extracting Democratic Value Variable V2, eval=TRUE, echo=FALSE}
+### Importance of Living in Democracy
+## How important is it for you to live in a country that is governed democratically? Please tell me for ## each of the following things how essential you think it is as a characteristic of democracy. Use 
+## this scale where 1 means “not at all an essential characteristic of democracy” and 10 means it
+## definitely is “an essential characteristic of democracy”
+## WVS6 V140, WVS7 Q250
+
+summary(WVS6_trimmed$V140) ## again, NAs seem to have been already treated
+summary(WVS7_trimmed$VQ250)
+
+## ## checking distribution in WVS6
+WVS6_valid2 <- WVS6_trimmed %>% filter(!is.na(V140))
+
+## Create the boxplot
+ggplot(WVS6_valid2, aes(x = as.factor(COW), y = V140)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of V140 by Country",
+    x = "Country (COW Code)",
+    y = "V140"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+## still overall positive, but presumaby more variance than in V130
+
+## checking distribution in WVS7
+## dropping NAs
+WVS7_valid2 <- WVS7_trimmed %>% filter(Q250 >= 1 & Q250 <= 10)
+
+## Create the boxplot
+ggplot(WVS7_valid2, aes(x = as.factor(COW), y = Q250)) +
+  geom_boxplot() +
+  labs(
+    title = "Distribution of Q250 by Country",
+    x = "Country (COW Code)",
+    y = "Q250"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+## in-depth examination
+## WVS6$V140
+v140_counts_by_country <- WVS6_trimmed %>%
+  mutate(V140_str = ifelse(is.na(V140), "NA", as.character(V140))) %>%
+  group_by(COW, V140_str) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = V140_str,
+    values_from = count,
+    values_fill = 0  ##Fill missing combinations with 0
+  ) %>%
+  arrange(COW)
+v140_counts_by_country
+
+## WVS7$Q250
+q250_counts_by_country <- WVS7_trimmed %>%
+  mutate(
+    Q250_str = case_when(
+      Q250 < 0 ~ "NA",               ## Treat negative values as NA-like
+      TRUE ~ as.character(Q250)
+    )
+  ) %>%
+  group_by(COW, Q250_str) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  pivot_wider(
+    names_from = Q250_str,
+    values_from = count,
+    values_fill = 0
+  ) %>%
+  arrange(COW)
+q250_counts_by_country
+```
+```{r creating a new comprehensive dataset, eval=TRUE, echo=FALSE}
+## building on the "Countries" 
+
+## lmrob cannot process...
+## using the valid versions, which excludes NAs
+## using huberM instead
+
+library(robustbase)
+
+# --- WVS6_valid1: V130 ---
+mean_v130 <- WVS6_valid1 %>%
+  group_by(COW) %>%
+  summarise(V130_huber = huberM(V130_reversed)$mu, .groups = "drop")
+
+# --- WVS6_valid2: V140 ---
+mean_v140 <- WVS6_valid2 %>%
+  group_by(COW) %>%
+  summarise(V140_huber = huberM(V140)$mu, .groups = "drop")
+
+# --- WVS7_valid1: Q238 ---
+mean_q238 <- WVS7_valid1 %>%
+  group_by(COW) %>%
+  summarise(Q238_huber = huberM(Q238_reversed)$mu, .groups = "drop")
+
+# --- WVS7_valid2: Q250 ---
+mean_q250 <- WVS7_valid2 %>%
+  group_by(COW) %>%
+  summarise(Q250_huber = huberM(Q250)$mu, .groups = "drop")
+
+#Merge all robust means by COW
+library(purrr)
+robust_means <- reduce(
+  list(mean_v130, mean_v140, mean_q238, mean_q250),
+  ~ full_join(.x, .y, by = "COW")
+)
+
+# Merge with your "Countries" dataframe
+Countries_updated <- left_join(Countries, robust_means, by = "COW")
+```
+
+```{r calculaitng changes in values, eval=TRUE, echo=FALSE}
+## change in "Affective Evaluation of Democratic System" (V1)
+## Q238 - V130 (both reversed)
+Countries_updated <- Countries_updated %>%
+  mutate(V1change = Q238_huber - V130_huber)
+
+## change in "Importance of Living in Democracy" (V2)
+## Q250 - V140
+Countries_updated <- Countries_updated %>%
+  mutate(V2change = Q250_huber - V140_huber)
+
+Countries_updated
+
+## dichotomize or not?
+## checking for exactly 0 change
+any(Countries_updated$V1change == 0, na.rm = TRUE)
+which(Countries_updated$V1change == 0) ## quite a few...
+
+any(Countries_updated$V2change == 0, na.rm = TRUE)
+which(Countries_updated$V2change == 0) ## slightly less, but probably not ignorable
+```
+
+```{r attaching scores of Liberal Democracy from VDem, eval=TRUE, echo=FALSE}
+## initial scores of LD
+
+## creating a temporary dataframe with only necessary columns from VDem
+vdem_subset <- VDem %>%
+  select(COWcode, year, v2x_libdem) %>%
+  rename(COW = COWcode, WVS6 = year)  # Temporary renaming
+
+## join 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset, by = c("COW", "WVS6")) %>%
+  rename(init_LD = v2x_libdem)  # Renaming the joined column
+## NA for Hong Kong
+
+## later scores of LD
+vdem_subset1 <- VDem %>%
+  select(COWcode, year, v2x_libdem) %>%
+  rename(COW = COWcode, WVS7 = year)  # Temporarily rename to match join keys
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset1, by = c("COW", "WVS7")) %>%
+  rename(later_LD = v2x_libdem)  ## again, NA for Hong Kong
+
+## checking the reason for NA
+VDem %>%
+  filter(country_name == "Hong Kong", year == 2012) %>%
+  select(COWcode) ## not included on COW (as country)
+
+## manually filling in?
+#VDem %>%
+#  filter(country_name == "Hong Kong", year == 2014) %>%
+#  select(v2x_libdem)
+
+#VDem %>%
+#  filter(country_name == "Hong Kong", year == 2018) %>%
+#  select(v2x_libdem) 
+
+# Extract the liberal democracy score for Hong Kong in 2014
+hk_ld_score <- VDem %>%
+  filter(country_name == "Hong Kong", year == 2014) %>%
+  pull(v2x_libdem)  
+
+# Fill in the value in Countries_updated
+Countries_updated <- Countries_updated %>%
+  mutate(init_LD = if_else(Country_name == "Hong Kong", hk_ld_score, init_LD))
+
+# Extract the liberal democracy score for Hong Kong in 2018
+hk_ld_score1 <- VDem %>%
+  filter(country_name == "Hong Kong", year == 2018) %>%
+  pull(v2x_libdem)  
+Countries_updated <- Countries_updated %>%
+  mutate(later_LD = if_else(Country_name == "Hong Kong", hk_ld_score1, later_LD))
+
+## Creating Variable of LD change
+Countries_updated <- Countries_updated %>%
+  mutate(LDchange = later_LD - init_LD)
+```
+```{r preliminary result, eval=TRUE, echo=FALSE}
+## no adjustment
+summary(lm(LDchange ~ V1change, data = Countries_updated))
+summary(lm(LDchange ~ V2change, data = Countries_updated))
+## both suggest negative relationship, but neither reaching (even) the conventional alpha
+
+```
+```{r correlation between the two independent variables, eval=TRUE, echo=FALSE}
+summary(lm(V2change ~ V1change, data = Countries_updated)) 
+## indication of slight positive correlation
+```
+
+
+
+```{r adding covariates from VDem, eval=TRUE, echo=FALSE}
+## should exclude variables already incorporated into LD index
+## fine-tuned matching might not be possible due to small n
+
+## macro data missing for Hong Kong
+## dropping Hong Kong
+Countries_updated <- Countries_updated %>%
+  filter(Country_name != "Hong Kong")
+
+## GDP per capita
+vdem_subset3 <- VDem %>%
+  select(COWcode, year, e_gdppc) %>%
+  rename(COW = COWcode, WVS6 = year) 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset3, by = c("COW", "WVS6")) %>%
+  rename(GDPpc = e_gdppc)  
+
+## population
+vdem_subset4 <- VDem %>%
+  select(COWcode, year, e_pop) %>%
+  rename(COW = COWcode, WVS6 = year) 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset4, by = c("COW", "WVS6")) %>%
+  rename(Pop = e_pop) 
+
+## region (politico-geographic, 7 category)
+vdem_subset5 <- VDem %>%
+  select(COWcode, year, e_regionpol_7C) %>%
+  rename(COW = COWcode, WVS6 = year) 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset5, by = c("COW", "WVS6")) %>%
+  rename(Region = e_regionpol_7C) 
+
+## political institution (i.e., electoral system)
+summary(VDem$v2elparlel) # either majoritarian or proportional
+summary(VDem$v2elloelsy) # 13 categories... viable?   ## no great difference in terms of missingness
+
+vdem_subset6 <- VDem %>%
+  select(COWcode, year, v2elparlel) %>%
+  rename(COW = COWcode, WVS6 = year) 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset6, by = c("COW", "WVS6")) %>%
+  rename(elecsys2 = v2elparlel)  
+
+vdem_subset7 <- VDem %>%
+  select(COWcode, year, v2elloelsy) %>%
+  rename(COW = COWcode, WVS6 = year) 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset7, by = c("COW", "WVS6")) %>%
+  rename(elecsys13 = v2elloelsy)  
+
+## age of regime
+#summary(VDem$v2regdur) ## maybe
+vdem_subset8 <- VDem %>%
+  select(COWcode, year, v2regdur) %>%
+  rename(COW = COWcode, WVS6 = year) 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset8, by = c("COW", "WVS6")) %>%
+  rename(regimedur = v2regdur) ## Egypt = 0?
+
+## polarization
+#summary(VDem$v2cacamps_ord) ## using ordinal version
+
+vdem_subset9 <- VDem %>%
+  select(COWcode, year, v2cacamps_ord) %>%
+  rename(COW = COWcode, WVS6 = year) 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset9, by = c("COW", "WVS6")) %>%
+  rename(polar = v2cacamps_ord) 
+
+## Regime as either descriptive V or covariate//partial overlap with LD index
+#summary(VDem$v2x_regime) 
+vdem_subset10 <- VDem %>%
+  select(COWcode, year, v2x_regime) %>%
+  rename(COW = COWcode, WVS6 = year) 
+Countries_updated <- Countries_updated %>%
+  left_join(vdem_subset10, by = c("COW", "WVS6")) %>%
+  rename(regtype = v2x_regime) 
+```
+
+```{r initial distribution of regime, eval=TRUE, echo=FALSE}
+## RoW
+
+# Define custom labels for the x-axis
+regtype_labels <- c(
+  "0" = "Closed Autocracy",
+  "1" = "Electoral Autocracy",
+  "2" = "Electoral Democracy",
+  "3" = "Liberal Democracy"
+)
+
+# Plot the histogram
+ggplot(Countries_updated, aes(x = regtype)) +
+  geom_histogram(binwidth = 0.1, color = "black", fill = "skyblue", boundary = 0.5) +
+  scale_x_continuous(
+    breaks = 0:3,
+    labels = c("Closed Autocracy", "Electoral Autocracy", "Electoral Democracy", "Liberal Democracy"),
+    name = "Regime Type"
+  ) +
+  coord_cartesian(xlim = c(-1, 4)) +  # expands the x-axis view
+  labs(
+    title = "Figure 1. Distribution of Regime Types (RoW)",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+
+```{r exploring trichotomizing variables, eval=TRUE, echo=FALSE}
+## checking the distribution of V changes
+range(Countries_updated$V1change)
+
+ggplot(Countries_updated, aes(x = V1change)) +
+  geom_histogram(binwidth = 0.05, fill = "steelblue", color = "white") +
+  labs(title = " Distribution of Affective Evaluation Change",
+       x = "Affective Evaluation Change",
+       y = "Count") +
+  theme_minimal()
+
+range(Countries_updated$V2change)
+
+ggplot(Countries_updated, aes(x = V2change)) +
+  geom_histogram(binwidth = 0.05, fill = "blue", color = "white") +
+  labs(title = "Distribution of Perceived Importance Change",
+       x = "Perceived Importance Change",
+       y = "Count") +
+  theme_minimal()    ## meaningful?
+
+## what about LD change?
+range(Countries_updated$LDchange)
+
+ggplot(Countries_updated, aes(x = LDchange)) +
+  geom_histogram(binwidth = 0.01, fill = "purple", color = "white") +
+  labs(title = "Distribution of LDchange",
+       x = "LDchange",
+       y = "Count") +
+  theme_minimal()
+```
+```{r matching, eval=TRUE, echo=FALSE}
+#lm(LDchange ~ V1change, data = Countries_updated)
+## beginning with covariates without any NAs
+any(is.na(Countries_updated$GDPpc))
+any(is.na(Countries_updated$Region))
+any(is.na(Countries_updated$elecsys2)) #true
+any(is.na(Countries_updated$elecsys13)) #true
+any(is.na(Countries_updated$regimedur))
+any(is.na(Countries_updated$polar))
+any(is.na(Countries_updated$regtype))
+
+## may rank GDPpc?
+## don't want to introduce breaks in the V1/V2 change if possible...
+## seems mostly impossible with existing packages
+
+library(Matching)
+
+## match on V1 (exploratory)
+Countries_updated <- Countries_updated %>%
+  mutate(
+    treated = if_else(V1change > median(V1change, na.rm = TRUE), 1, 0)
+  )
+
+X <- Countries_updated %>%
+  transmute(
+    GDPpc = rank(GDPpc, ties.method = "average"),
+    regimedur = rank(regimedur, ties.method = "average"),
+    Region = as.numeric(as.factor(Region)),
+    polar = as.numeric(as.factor(polar)),
+    regtype = as.numeric(as.factor(regtype))
+  ) %>%
+  as.matrix()
+
+set.seed(2025)  
+
+gen_out <- GenMatch(
+  Tr = Countries_updated$treated,
+  X = X,
+  M = 1,                     # 1-to-1 matching
+  pop.size = 100,            
+  max.generations = 10,      
+  wait.generations = 1,
+  print.level = 1
+)
+
+match_out <- Match(
+  Tr = Countries_updated$treated,
+  X = X,
+  M = 1,
+  Weight.matrix = gen_out
+)
+
+summary(match_out) ## meh... 10 out of 41
+
+## check pairs
+matched_pairs <- data.frame(
+  treated_index = match_out$index.treated,
+  control_index = match_out$index.control
+)
+
+print(matched_pairs)
+
+## balance
+MatchBalance(treated ~ GDPpc + regimedur + Region + polar + regtype,
+             data = Countries_updated,
+             match.out = match_out)
+```
+```{r matching with V2, eval=TRUE, echo=FALSE}
+## perhaps more promising?
+
+Countries_updated <- Countries_updated %>%
+  mutate(
+    treated2 = if_else(V2change > median(V2change, na.rm = TRUE), 1, 0)
+  )
+
+X <- Countries_updated %>%
+  transmute(
+    GDPpc = rank(GDPpc, ties.method = "average"),
+    regimedur = rank(regimedur, ties.method = "average"),
+    Region = as.numeric(as.factor(Region)),
+    polar = as.numeric(as.factor(polar)),
+    regtype = as.numeric(as.factor(regtype))
+  ) %>%
+  as.matrix()
+
+set.seed(2025)  
+
+gen_out2 <- GenMatch(
+  Tr = Countries_updated$treated2,
+  X = X,
+  M = 1,                     
+  pop.size = 100,            
+  max.generations = 10,      
+  wait.generations = 1,
+  print.level = 1
+)
+
+match_out2 <- Match(
+  Tr = Countries_updated$treated2,
+  X = X,
+  M = 1,
+  Weight.matrix = gen_out
+)
+
+summary(match_out2) ## slightly more, 14 out of 41
+
+## check pairs
+matched_pairs2 <- data.frame(
+  treated_index = match_out2$index.treated,
+  control_index = match_out2$index.control
+)
+
+print(matched_pairs2)
+
+## balance
+MatchBalance(treated ~ GDPpc + regimedur + Region + polar + regtype,
+             data = Countries_updated,
+             match.out = match_out2)
+
+
+```
+```{r performance test, eval=TRUE, echo=FALSE}
+library(dplyr)
+library(purrr)
+library(broom)
+
+df <- Countries_updated %>%
+  dplyr::select(V2change, LDchange, GDPpc, regimedur, Region, polar, regtype) %>%
+  mutate(
+    Region = as.factor(Region),
+    polar = as.factor(polar),
+    regtype = as.factor(regtype)
+  )
+
+## false positive with permutation
+set.seed(2025)
+
+perm_test <- function(data) {
+  data_perm <- data %>%
+    mutate(V2change_perm = sample(V2change))  
+  
+  model <- lm(LDchange ~ V2change_perm + GDPpc + regimedur + Region + polar + regtype, data = data_perm)
+  tidy(model) %>% filter(term == "V2change_perm") %>% pull(p.value)
+}
+
+p_vals <- replicate(1000, perm_test(df))
+
+## Estimate false positive rate at α = 0.05 and 0.10
+mean(p_vals < 0.05)  ## 0.046 - acceptable?
+mean(p_vals < 0.10)  ## 0.094
+```
+
+
+```{r performance test power, eval=TRUE, echo=FALSE}
+## power
+set.seed(2025)
+
+
+
+simulate_power <- function(beta, data) {
+  data_sim <- data %>%
+    mutate(LDchange_sim = LDchange + beta * V2change)
+  
+  model <- lm(LDchange_sim ~ V2change + GDPpc + regimedur + Region + polar + regtype, data = data_sim)
+  tidy(model) %>% filter(term == "V2change") %>% pull(p.value)
+}
+
+## multiple effect sizes
+effect_sizes <- seq(0, 0.5, by = 0.05)
+
+# run 500 simulations and estimate power
+power_curve <- map_dfr(effect_sizes, function(b) {
+  pvals <- replicate(500, simulate_power(b, df))
+  tibble(
+    beta = b,
+    power_05 = mean(pvals < 0.05),
+    power_10 = mean(pvals < 0.10)
+  )
+})
+
+#print(power_curve) ## not working!
+
+## plotting power curve
+library(ggplot2)
+
+ggplot(power_curve, aes(x = beta)) +
+  geom_line(aes(y = power_05), color = "blue") +
+  geom_line(aes(y = power_10), color = "red", linetype = "dashed") +
+  labs(
+    title = "Figure 2. Estimated Power Curve",
+    x = "True Effect Size (β)",
+    y = "Power",
+    caption = "Blue: α = 0.05; Red dashed: α = 0.10"
+  ) +
+  theme_minimal()
+
+## currently clueless about the true (?) beta
+
+```
+```{r test evaluation, eval=TRUE, echo=FALSE}
+library(dplyr)
+library(broom)
+library(purrr)
+#install.packages("FNN")
+library(FNN)      
+library(tidyr)
+
+# Step 1: Prepare clean data
+df_base <- Countries_updated %>%
+  dplyr::select(V2change, LDchange, GDPpc, regimedur, Region, polar, regtype) %>%
+  drop_na() %>%
+  mutate(
+    treated = as.numeric(V2change > median(V2change, na.rm = TRUE)),
+    Region = as.factor(as.character(Region)),
+    polar = as.factor(as.character(polar)),
+    regtype = as.factor(as.character(regtype))
+  )
+
+# Step 2: Simulation function using manual Mahalanobis matching
+simulate_bias_mse <- function(beta_true, data) {
+  # Simulate outcome
+  data_sim <- data %>%
+    mutate(
+      LD_sim = LDchange + beta_true * V2change
+    )
+
+  # Split treated/control
+  treated_df <- data_sim %>% filter(treated == 1)
+  control_df <- data_sim %>% filter(treated == 0)
+
+  # Use Mahalanobis distance on numeric covariates
+  covariates <- c("GDPpc", "regimedur")
+  X_treated <- treated_df[, covariates]
+  X_control <- control_df[, covariates]
+
+  # Find nearest control for each treated unit
+  nn <- get.knnx(data = X_control, query = X_treated, k = 1)
+
+  matched_control <- control_df[nn$nn.index[,1], ]
+  matched_treated <- treated_df
+
+  matched_data <- bind_rows(matched_treated, matched_control)
+
+  # OLS on unmatched full sample
+  model_unmatched <- lm(LD_sim ~ V2change + GDPpc + regimedur + Region + polar + regtype, data = data_sim)
+  beta_unmatched <- coef(model_unmatched)["V2change"]
+
+  # OLS on matched sample
+  model_matched <- lm(LD_sim ~ V2change + GDPpc + regimedur + Region + polar + regtype, data = matched_data)
+  beta_matched <- coef(model_matched)["V2change"]
+
+  return(c(beta_unmatched = beta_unmatched, beta_matched = beta_matched))
+}
+
+# Step 3: Run simulation
+set.seed(2025)
+n_sim <- 500
+true_beta <- 0.2
+
+results <- replicate(n_sim, simulate_bias_mse(true_beta, df_base)) %>%
+  t() %>%
+  as.data.frame()
+  colnames(results) <- c("beta_unmatched", "beta_matched")
+
+# Step 4: Summarize bias and MSE
+performance <- results %>%
+  summarise(
+    bias_unmatched = mean(beta_unmatched - true_beta),
+    mse_unmatched  = mean((beta_unmatched - true_beta)^2),
+    bias_matched   = mean(beta_matched - true_beta),
+    mse_matched    = mean((beta_matched - true_beta)^2)
+  )
+
+print(performance) ## too good?
+
+
+```
+```{r plotting evaluation results, eval=TRUE, echo=FALSE}
+library(ggplot2)
+library(tidyr)
+
+# Reshape the results to long format for ggplot
+results_long <- results %>%
+  pivot_longer(cols = everything(), names_to = "model", values_to = "estimate")
+
+# Plot the distributions
+ggplot(results_long, aes(x = estimate, fill = model)) +
+  geom_density(alpha = 0.5) +
+  geom_vline(xintercept = 0.2, linetype = "dashed", color = "black") +
+  scale_x_continuous(limits = c(-0.1, 0.4)) + 
+  labs(
+    title = "Figure 3. Estimated Effects for Change in Importance of Democracy",
+    subtitle = "hypothetical true effect (β = 0.2)",
+    x = "Estimated Coefficient on V2change",
+    y = "Density",
+    fill = "Model"
+  ) +
+  theme_minimal()
+
+```
+
+
+```{r preliminary sensitivity analysis, eval=TRUE, echo=FALSE}
+
+library(sensemakr)
+
+model_matched <- lm(LDchange ~ V2change + GDPpc + regimedur + Region + polar + regtype, 
+                    data = Countries_updated) ## can only do with the initial data at this point...
+
+sensitivity <- sensemakr(
+  model = model_matched,
+  treatment = "V2change",
+  benchmark_covariates = c("polar", "regtype"),  
+  kd = 1  # number of confounders worth of strength to consider
+)
+print(sensitivity)
+
+
+plot(sensitivity)
+```
+
+
+
+
